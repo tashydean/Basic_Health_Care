@@ -4,7 +4,7 @@
 
 ```
 data/
-├── raw/                          # 원본 TXT (변경 금지)
+├── raw/                                              # 원본 TXT (변경 금지)
 │   ├── PatientCorePopulatedTable.txt                 # 환자 인구통계 정보
 │   ├── AdmissionsCorePopulatedTable.txt              # 입원 기록 
 │   ├── AdmissionsDiagnosesCorePopulatedTable.txt     # 진단 코드 및 설명
