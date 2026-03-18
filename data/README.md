@@ -4,11 +4,11 @@
 
 ```
 data/
-├── raw/                          # 원본 CSV (변경 금지)
-│   ├── patients.csv              # 환자 인구통계 정보
-│   ├── admissions.csv            # 입원 기록 (입퇴원일, LOS 등)
-│   ├── diagnoses.csv             # 진단 코드 및 설명
-│   └── labs.csv                  # 검사 결과 (111,483건)
+├── raw/                          # 원본 TXT (변경 금지)
+│   ├── PatientCorePopulatedTable.txt                 # 환자 인구통계 정보
+│   ├── AdmissionsCorePopulatedTable.txt              # 입원 기록 
+│   ├── AdmissionsDiagnosesCorePopulatedTable.txt     # 진단 코드 및 설명
+│   └── LabsCorePopulatedTable.txt                    # 검사 결과 (111,483건)
 └── processed/
     └── processed_healthcare_data.csv   # 4개 테이블 병합 + 파생변수 포함 최종 데이터셋
 ```
@@ -33,5 +33,5 @@ data/
 | `Lab_Mean`, `Lab_Std` | 검사 수치 기초 통계 |
 | `Lab_Trend` | 입원 기간 내 검사 수치 변화 기울기 |
 | `Abnormal_Sum` | 입원별 이상 소견 누적 횟수 |
-| `Total_Abnormal_Count` | 환자 전체 이상 소견 합 **(핵심 피처)** |
-| `Total_Lab_Variability` | 환자 단위 전반적 변동성 **(핵심 피처)** |
+| `Total_Abnormal_Count` | 환자 전체 이상 소견 합 |
+| `Total_Lab_Variability` | 환자 단위 전반적 변동성 |
