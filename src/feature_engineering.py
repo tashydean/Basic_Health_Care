@@ -73,6 +73,61 @@ def load_raw_tables(data_dir: str = "data/raw") -> dict:
     print(f"   ※ AdmissionID unique: {tables['admissions']['AdmissionID'].nunique()}종 (환자별 순번)")
     return tables
 
+# ---------------------------------------------------------------------------
+# 환자 인구통계 파생 변수 생성
+# ---------------------------------------------------------------------------
+
+def compute_patient_demographics(patients: pd.DataFrame) -> pd.DataFrame:
+    """
+    환자 테이블에 나이, 연령대, 빈곤 수준 파생 변수를 추가합니다.
+
+    생성 컬럼
+    ---------
+    - Age         : 현재 기준 나이 (소수점 1자리)
+    - AgeGroup    : 연령대 구간
+    - PovertyLevel: 빈곤율 기반 카테고리
+
+    Notes
+    -----
+    - PatientDateOfBirth는 datetime으로 변환 (errors='coerce')
+    - 나이는 현재 시점 기준 (Timestamp.now)
+    """
+
+    df = patients.copy()
+
+    # ── 1. 생년월일 변환 ─────────────────────────────
+    df["PatientDateOfBirth"] = pd.to_datetime(
+        df["PatientDateOfBirth"], errors="coerce"
+    )
+
+    # ── 2. 나이 계산 ───────────────────────────────
+    df["Age"] = (
+        (pd.Timestamp.now() - df["PatientDateOfBirth"])
+        .dt.days / 365.25
+    )
+    df["Age"] = df["Age"].round(1)
+
+    # ── 3. 연령대 그룹 ────────────────────────────
+    df["AgeGroup"] = pd.cut(
+        df["Age"],
+        bins=[0, 30, 40, 50, 60, 70, 200],
+        labels=["~30세", "30대", "40대", "50대", "60대", "70세~"]
+    )
+
+    # ── 4. 빈곤 수준 ─────────────────────────────
+    df["PovertyLevel"] = pd.cut(
+        df["PatientPopulationPercentageBelowPoverty"],
+        bins=[0, 10, 20, 30, 100],
+        labels=["Low", "Medium", "High", "Very High"]
+    )
+
+    # ── 5. 로그 출력 ─────────────────────────────
+    print("✅ 환자 파생 변수 생성 완료")
+    print(f"   Age 결측: {df['Age'].isna().sum()}건")
+    print(f"\n연령대 분포:\n{df['AgeGroup'].value_counts().sort_index()}")
+
+    return df
+
 
 # ---------------------------------------------------------------------------
 # 2. 시간 파생 변수
@@ -89,23 +144,29 @@ def compute_time_features(admissions: pd.DataFrame) -> pd.DataFrame:
     - LengthOfStayCategory (Short ≤7일 / Medium ≤14일 / Long >14일)
     """
     df = admissions.copy()
+    
     df["AdmissionStartDate"] = pd.to_datetime(df["AdmissionStartDate"])
     df["AdmissionEndDate"]   = pd.to_datetime(df["AdmissionEndDate"])
+    
+    df["LengthOfStay"] = (
+        df["AdmissionEndDate"] - df["AdmissionStartDate"]
+    ).dt.days
 
     df["AdmissionYear"]      = df["AdmissionStartDate"].dt.year
     df["AdmissionMonth"]     = df["AdmissionStartDate"].dt.month
     df["AdmissionDayOfWeek"] = df["AdmissionStartDate"].dt.dayofweek
     df["AdmissionDayName"]   = df["AdmissionStartDate"].dt.day_name()
 
-    df["LengthOfStay"] = (
-        df["AdmissionEndDate"] - df["AdmissionStartDate"]
-    ).dt.days
+
 
     df["LengthOfStayCategory"] = pd.cut(
         df["LengthOfStay"],
         bins=[0, 7, 14, float("inf")],
         labels=["Short", "Medium", "Long"],
     )
+    
+    print("✅ 시간 변수 생성 완료")
+    
     return df
 
 
@@ -132,17 +193,13 @@ def compute_hours_after_admission(labs: pd.DataFrame,
     df["HoursAfterAdmission"] = (
         (df["LabDateTime"] - df["AdmissionStartDate"]).dt.total_seconds() / 3600
     ).clip(lower=0)
+    
+    print("✅ 검사 단위 파생 변수 생성 완료")
+
+
 
     return df.drop(columns=["AdmissionStartDate"])
 
-
-def _compute_trend(g: pd.DataFrame) -> float:
-    """단순 선형회귀 기울기로 검사 수치의 시간적 변화 방향을 계산합니다."""
-    v, t = g["LabValue"], g["HoursAfterAdmission"]
-    if len(v) < 2 or t.nunique() < 2:
-        return 0.0
-    slope, *_ = linregress(t, v)
-    return slope
 
 
 # ---------------------------------------------------------------------------
@@ -190,17 +247,15 @@ def aggregate_lab_features(labs: pd.DataFrame) -> pd.DataFrame:
         Lab_Mean    =("LabValue",    "mean"),
         Lab_Std     =("LabValue",    "std"),
         Abnormal_Sum=("IsAbnormal",  "sum"),
+        First_Value=("LabValue", "first"),
+        Last_Value=("LabValue", "last"),
     ).reset_index()
+    
+    df_lab_features["Lab_Trend"] = (
+        df_lab_features["Last_Value"] - df_lab_features["First_Value"]
+        )
 
-    # Trend: 입원 × 검사명별 선형 기울기
-    trend_vals = (
-        grp.apply(_compute_trend, include_groups=False)
-        .rename("Lab_Trend")
-        .reset_index()
-    )
-    df_lab_features = df_lab_features.merge(
-        trend_vals, on=["PatientID", "AdmissionID", "LabName"], how="left"
-    )
+
     df_lab_features["Lab_Std"]   = df_lab_features["Lab_Std"].fillna(0)
     df_lab_features["Lab_Trend"] = df_lab_features["Lab_Trend"].fillna(0)
 
@@ -229,6 +284,8 @@ def aggregate_lab_features(labs: pd.DataFrame) -> pd.DataFrame:
     master_wide = master_wide.merge(df_lab_variety, on=["PatientID", "AdmissionID"], how="left")
     master_wide["LabTestCount"]   = master_wide["LabTestCount"].fillna(0).astype(int)
     master_wide["LabTestVariety"] = master_wide["LabTestVariety"].fillna(0).astype(int)
+    
+    print("✅ wide format 집계 완료")
 
     return master_wide
 
@@ -258,6 +315,9 @@ def build_final_dataset(tables: dict) -> pd.DataFrame:
     admissions = tables["admissions"]
     diagnoses  = tables["diagnoses"]
     labs       = tables["labs"]
+    
+    
+    patients = compute_patient_demographics(patients)
 
     # 2. 시간 파생 변수
     admissions = compute_time_features(admissions)
@@ -284,7 +344,7 @@ def build_final_dataset(tables: dict) -> pd.DataFrame:
 
 
 def save_processed(df: pd.DataFrame,
-                   output_path: str = "data/processed/processed_healthcare_data.csv") -> None:
+                   output_path: str = "data/processed/processed_healthcare_data_testpy_org.csv") -> None:
     """전처리 완료 데이터셋을 CSV로 저장합니다."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     df.to_csv(output_path, index=False, encoding="utf-8-sig")

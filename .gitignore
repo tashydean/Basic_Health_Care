@@ -1,3 +1,7 @@
 basic_healthcare_eda_subset_local.ipynb
 .ipynb_checkpoints/
 EMRData/
+src/temp.py
+data/processed/processed_healthcare_data_testpy_org.csv
+data/processed/processed_healthcare_data_testpy.csv
+data/processed/결과 데이터 비교.xlsx
